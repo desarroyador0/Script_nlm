@@ -1,0 +1,17 @@
+{
+  "name": "notebooklm-playwright-api",
+  "version": "1.0.0",
+  "description": "API para automatizar NotebookLM con Playwright",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "postinstall": "npx playwright install chromium && npx playwright install-deps chromium"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "playwright": "^1.44.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
