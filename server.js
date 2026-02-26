@@ -92,7 +92,17 @@ app.post('/generate-video', async (req, res) => {
     await page.waitForTimeout(2000);
 
     // ── Agregar fuente ───────────────────────────────────────
-    if (type === 'pdf') {
+    if (type === 'text') {
+      const tmpFile = `/tmp/guion_${Date.now()}.txt`;
+      fs.writeFileSync(tmpFile, source);
+      const uploadBtn = page.locator(['button:has-text("Upload")', 'button:has-text("Subir")'].join(', ')).first();
+      const uploadVisible = await uploadBtn.isVisible().catch(() => false);
+      if (uploadVisible) await uploadBtn.click();
+      await page.waitForTimeout(1000);
+      await page.locator('input[type="file"]').first().setInputFiles(tmpFile);
+      fs.unlinkSync(tmpFile);
+
+    } else if (type === 'pdf') {
       const fileInput = page.locator('input[type="file"]').first();
       await fileInput.setInputFiles(source);
 
