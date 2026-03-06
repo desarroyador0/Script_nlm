@@ -71,7 +71,14 @@ app.post('/generate-video', async (req, res) => {
 
     // ── Cargar cookies ───────────────────────────────────────
     console.log(`Cargando ${cookies.length} cookies...`);
-    await context.addCookies(cookies);
+    const cleanCookies = cookies.map(cookie => {
+  const validSameSite = ['Strict', 'Lax', 'None'];
+  if (!validSameSite.includes(cookie.sameSite)) {
+    cookie.sameSite = 'Lax';
+  }
+  return cookie;
+});
+await context.addCookies(cleanCookies);
     console.log('Cookies cargadas OK');
 
     const page = await context.newPage();
