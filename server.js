@@ -1,6 +1,7 @@
 /**
  * NotebookLM Playwright API
  * Deploy en Railway — llamada desde n8n en Render
+ * Autenticación via cookies (sin login)
  */
 
 const express = require('express');
@@ -41,16 +42,22 @@ app.post('/generate-video', async (req, res) => {
     return res.status(400).json({ error: 'Se requieren type y source' });
   }
 
-  const GOOGLE_EMAIL    = process.env.GOOGLE_EMAIL;
-  const GOOGLE_PASSWORD = process.env.GOOGLE_PASSWORD;
+  const GOOGLE_COOKIES = process.env.GOOGLE_COOKIES;
 
-  if (!GOOGLE_EMAIL || !GOOGLE_PASSWORD) {
-    return res.status(500).json({ error: 'Faltan variables GOOGLE_EMAIL / GOOGLE_PASSWORD' });
+  if (!GOOGLE_COOKIES) {
+    return res.status(500).json({ error: 'Falta variable GOOGLE_COOKIES' });
+  }
+
+  let cookies;
+  try {
+    cookies = JSON.parse(GOOGLE_COOKIES);
+  } catch (e) {
+    return res.status(500).json({ error: 'GOOGLE_COOKIES no es un JSON válido: ' + e.message });
   }
 
   let browser;
   try {
-    console.log(`[${new Date().toISOString()}] Iniciando: type=${type} source=${source}`);
+    console.log(`[${new Date().toISOString()}] Iniciando: type=${type} source=${source.substring(0, 50)}...`);
 
     browser = await chromium.launch({
       headless: true,
@@ -62,26 +69,23 @@ app.post('/generate-video', async (req, res) => {
       viewport: { width: 1280, height: 900 }
     });
 
+    // ── Cargar cookies ───────────────────────────────────────
+    console.log(`Cargando ${cookies.length} cookies...`);
+    await context.addCookies(cookies);
+    console.log('Cookies cargadas OK');
+
     const page = await context.newPage();
 
-    // ── Login Google ─────────────────────────────────────────
-    console.log('Haciendo login...');
-    await page.goto('https://accounts.google.com/signin', { waitUntil: 'networkidle' });
-    await page.fill('input[type="email"]', GOOGLE_EMAIL);
-    await page.click('#identifierNext');
-    await page.waitForTimeout(2000);
-    await page.fill('input[type="password"]', GOOGLE_PASSWORD);
-    await page.click('#passwordNext');
-    await page.waitForTimeout(4000);
-
-    if (page.url().includes('signin') || page.url().includes('challenge')) {
-      throw new Error('Login fallido. Usa App Password de Google.');
-    }
-    console.log('Login OK');
-
     // ── Abrir NotebookLM ─────────────────────────────────────
+    console.log('Abriendo NotebookLM...');
     await page.goto('https://notebooklm.google.com', { waitUntil: 'networkidle' });
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(3000);
+
+    // Verificar que estamos logueados
+    if (page.url().includes('accounts.google.com')) {
+      throw new Error('Las cookies expiaron. Necesitás exportar nuevas cookies desde el navegador.');
+    }
+    console.log('Sesión activa OK');
 
     // ── Nuevo notebook ───────────────────────────────────────
     await page.locator([
