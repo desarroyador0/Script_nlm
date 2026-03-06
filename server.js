@@ -69,32 +69,41 @@ app.post('/generate-video', async (req, res) => {
       viewport: { width: 1280, height: 900 }
     });
 
+    const page = await context.newPage();
+
+    // ── Navegar primero para establecer el dominio ───────────
+    console.log('Estableciendo dominio...');
+    await page.goto('https://accounts.google.com', { waitUntil: 'networkidle' });
+    await page.waitForTimeout(1000);
+
     // ── Cargar cookies ───────────────────────────────────────
     console.log(`Cargando ${cookies.length} cookies...`);
     const cleanCookies = cookies.map(cookie => {
-  const validSameSite = ['Strict', 'Lax', 'None'];
-  if (!validSameSite.includes(cookie.sameSite)) {
-    cookie.sameSite = 'Lax';
-  }
-  return cookie;
-});
-await context.addCookies(cleanCookies);
+      const validSameSite = ['Strict', 'Lax', 'None'];
+      if (!validSameSite.includes(cookie.sameSite)) {
+        cookie.sameSite = 'Lax';
+      }
+      // Asegurar que el dominio esté bien formateado
+      if (cookie.domain && !cookie.domain.startsWith('.') && !cookie.domain.startsWith('accounts')) {
+        cookie.domain = '.' + cookie.domain;
+      }
+      return cookie;
+    });
+    await context.addCookies(cleanCookies);
     console.log('Cookies cargadas OK');
-
-    const page = await context.newPage();
 
     // ── Abrir NotebookLM ─────────────────────────────────────
     console.log('Abriendo NotebookLM...');
     await page.goto('https://notebooklm.google.com', { waitUntil: 'networkidle' });
     await page.waitForTimeout(3000);
 
-   // Verificar que estamos logueados
-const currentUrl = page.url();
-console.log('URL actual después de cargar cookies:', currentUrl);
-if (currentUrl.includes('accounts.google.com') || currentUrl.includes('signin')) {
-  throw new Error(`Las cookies expiaron o son inválidas. URL actual: ${currentUrl}`);
-}
-console.log('Sesión activa OK');
+    // ── Verificar que estamos logueados ──────────────────────
+    const currentUrl = page.url();
+    console.log('URL actual después de cargar cookies:', currentUrl);
+    if (currentUrl.includes('accounts.google.com') || currentUrl.includes('signin')) {
+      throw new Error(`Las cookies expiaron o son inválidas. URL actual: ${currentUrl}`);
+    }
+    console.log('Sesión activa OK');
 
     // ── Nuevo notebook ───────────────────────────────────────
     await page.locator([
