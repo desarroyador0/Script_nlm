@@ -1,7 +1,7 @@
 /**
  * NotebookLM Playwright API
  * Deploy en Railway — llamada desde n8n en Render
- * Autenticación via cookies (sin login)
+ * Autenticación via Google App Password
  */
 
 const express = require('express');
@@ -42,17 +42,11 @@ app.post('/generate-video', async (req, res) => {
     return res.status(400).json({ error: 'Se requieren type y source' });
   }
 
-  const GOOGLE_COOKIES = process.env.GOOGLE_COOKIES;
+  const GOOGLE_EMAIL    = process.env.GOOGLE_EMAIL;
+  const GOOGLE_PASSWORD = process.env.GOOGLE_PASSWORD;
 
-  if (!GOOGLE_COOKIES) {
-    return res.status(500).json({ error: 'Falta variable GOOGLE_COOKIES' });
-  }
-
-  let cookies;
-  try {
-    cookies = JSON.parse(GOOGLE_COOKIES);
-  } catch (e) {
-    return res.status(500).json({ error: 'GOOGLE_COOKIES no es un JSON válido: ' + e.message });
+  if (!GOOGLE_EMAIL || !GOOGLE_PASSWORD) {
+    return res.status(500).json({ error: 'Faltan variables GOOGLE_EMAIL / GOOGLE_PASSWORD' });
   }
 
   let browser;
@@ -71,41 +65,48 @@ app.post('/generate-video', async (req, res) => {
 
     const page = await context.newPage();
 
-    // ── Navegar primero para establecer el dominio ───────────
-    console.log('Estableciendo dominio...');
-    await page.goto('https://accounts.google.com', { waitUntil: 'networkidle' });
-    await page.waitForTimeout(1000);
+    // ── Login Google ─────────────────────────────────────────
+    console.log('Iniciando login...');
+    await page.goto('https://accounts.google.com/signin', { waitUntil: 'networkidle' });
 
-    // ── Cargar cookies ───────────────────────────────────────
-    console.log(`Cargando ${cookies.length} cookies...`);
-    const cleanCookies = cookies.map(cookie => {
-      const validSameSite = ['Strict', 'Lax', 'None'];
-      if (!validSameSite.includes(cookie.sameSite)) {
-        cookie.sameSite = 'Lax';
-      }
-      // Asegurar que el dominio esté bien formateado
-      if (cookie.domain && !cookie.domain.startsWith('.') && !cookie.domain.startsWith('accounts')) {
-        cookie.domain = '.' + cookie.domain;
-      }
-      return cookie;
-    });
-    await context.addCookies(cleanCookies);
-    console.log('Cookies cargadas OK');
+    // Email
+    await page.waitForSelector('input[type="email"]', { state: 'visible', timeout: 15000 });
+    await page.fill('input[type="email"]', GOOGLE_EMAIL);
+    await page.click('#identifierNext');
+    console.log('Email ingresado, esperando campo de contraseña...');
+
+    // Password
+    await page.waitForSelector('input[type="password"]', { state: 'visible', timeout: 15000 });
+    await page.waitForTimeout(1000);
+    await page.fill('input[type="password"]', GOOGLE_PASSWORD);
+    await page.click('#passwordNext');
+    console.log('Contraseña ingresada, esperando redirección...');
+
+    // Esperar que termine el login
+    await page.waitForNavigation({ waitUntil: 'networkidle', timeout: 30000 });
+    await page.waitForTimeout(2000);
+
+    const loginUrl = page.url();
+    console.log('URL post-login:', loginUrl);
+
+    if (loginUrl.includes('signin') || loginUrl.includes('challenge')) {
+      throw new Error('Login fallido. Verificá el email y la App Password. URL: ' + loginUrl);
+    }
+    console.log('Login OK');
 
     // ── Abrir NotebookLM ─────────────────────────────────────
     console.log('Abriendo NotebookLM...');
     await page.goto('https://notebooklm.google.com', { waitUntil: 'networkidle' });
     await page.waitForTimeout(3000);
 
-    // ── Verificar que estamos logueados ──────────────────────
-    const currentUrl = page.url();
-    console.log('URL actual después de cargar cookies:', currentUrl);
-    if (currentUrl.includes('accounts.google.com') || currentUrl.includes('signin')) {
-      throw new Error(`Las cookies expiaron o son inválidas. URL actual: ${currentUrl}`);
+    const notebookUrl = page.url();
+    console.log('URL NotebookLM:', notebookUrl);
+    if (notebookUrl.includes('accounts.google.com')) {
+      throw new Error('Redirigido al login al abrir NotebookLM. URL: ' + notebookUrl);
     }
-    console.log('Sesión activa OK');
 
     // ── Nuevo notebook ───────────────────────────────────────
+    console.log('Creando nuevo notebook...');
     await page.locator([
       'button:has-text("New notebook")',
       'button:has-text("Nuevo notebook")',
@@ -212,11 +213,8 @@ app.post('/generate-video', async (req, res) => {
     await download.saveAs(filePath);
     console.log(`Descargado: ${filePath}`);
 
-    // Leer archivo y devolver como base64
     const fileBuffer = fs.readFileSync(filePath);
     const base64     = fileBuffer.toString('base64');
-
-    // Limpiar archivo temporal
     fs.unlinkSync(filePath);
 
     res.json({
