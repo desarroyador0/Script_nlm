@@ -88,11 +88,13 @@ await context.addCookies(cleanCookies);
     await page.goto('https://notebooklm.google.com', { waitUntil: 'networkidle' });
     await page.waitForTimeout(3000);
 
-    // Verificar que estamos logueados
-    if (page.url().includes('accounts.google.com')) {
-      throw new Error('Las cookies expiaron. Necesitás exportar nuevas cookies desde el navegador.');
-    }
-    console.log('Sesión activa OK');
+   // Verificar que estamos logueados
+const currentUrl = page.url();
+console.log('URL actual después de cargar cookies:', currentUrl);
+if (currentUrl.includes('accounts.google.com') || currentUrl.includes('signin')) {
+  throw new Error(`Las cookies expiaron o son inválidas. URL actual: ${currentUrl}`);
+}
+console.log('Sesión activa OK');
 
     // ── Nuevo notebook ───────────────────────────────────────
     await page.locator([
